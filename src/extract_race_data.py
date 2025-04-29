@@ -68,6 +68,7 @@ def validate_year(year: int) -> bool:
 
 def get_race_file_path(event: str, year: int, session_type: str) -> str:
     """Get the full path for a race data file."""
+    event = event.replace(" ", "-")
     data_dir = os.path.join(os.path.dirname(__file__), 'race-data-cache')
     os.makedirs(data_dir, exist_ok=True)
     return os.path.join(data_dir, f"race_data_{event}_{year}_{session_type}.txt")

@@ -178,3 +178,4 @@ cython_debug/
 
 # fastf1 cache
 .fastf1_cache/
+.DS_Store

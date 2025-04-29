@@ -116,7 +116,7 @@ def create_race_data_file(year: int, event: str, session_type: str = "Race", des
     filename = get_race_file_path(event, year, session_type)
     
     with open(filename, 'w', encoding='utf-8') as f:
-        script_logger.info(f"Created file")
+        script_logger.info(f"Created file... Starting data genration")
         # Add race description if provided
         if description:
             f.write("RACE OVERVIEW\n")
@@ -384,8 +384,7 @@ async def get_race_data(year: int, race_name: str):
         
         return FileResponse(
             filename,
-            media_type="text/plain",
-            filename=os.path.basename(filename)
+            media_type="text/plain"
         )
     except ValueError as ve:
         script_logger.error(f"Validation error: {str(ve)}")

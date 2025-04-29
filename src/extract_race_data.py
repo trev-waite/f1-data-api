@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 from google import genai
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 import asyncio
-from utils.input_validation import validate_inputs
+from utils.input_validator import validate_inputs
 
 # Set up FastAPI app
 app = FastAPI(

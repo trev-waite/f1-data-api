@@ -175,3 +175,6 @@ cython_debug/
 
 # VSCode
 .vscode/
+
+# fastf1 cache
+.fastf1_cache/

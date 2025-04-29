@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from google import genai
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 import asyncio
+from utils.input_validator import validate_inputs
 
 # Set up FastAPI app
 app = FastAPI(
@@ -48,34 +49,79 @@ async def get_race_description(race_name: str, year: int) -> str:
     try:
         response = await client.aio.models.generate_content(
             model=model_id,
-            contents=f"Give a paragraph-length recap of the {year} Formula 1 race at {race_name}. Include key events and the winner.",
+            contents=f"Give a paragraph-length recap of the {year} Formula 1 race at {race_name}. Include key events and the winner. If no info is found, or the race hasn't happened yet, then return no description can be generated.",
             config=GenerateContentConfig(
                 tools=[google_search_tool],
                 response_modalities=["TEXT"],
             )
         )
+        print(response.text)
         return response.text
     except Exception as e:
         script_logger.error(f"Error getting race description: {e}")
         return "Race description unavailable."
 
-def extract_race_data(year: int, event: str, session_type: str = "Race", description: str = None) -> str:
-    """Extract comprehensive race data in LLM-friendly format."""
+def validate_year(year: int) -> bool:
+    """Validate that the year is between 2015 and current year."""
+    current_year = datetime.now().year
+    return 2015 <= year <= current_year
+
+def get_race_file_path(event: str, year: int, session_type: str) -> str:
+    """Get the full path for a race data file."""
+    data_dir = os.path.join(os.path.dirname(__file__), 'race-data-cache')
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, f"race_data_{event}_{year}_{session_type}.txt")
+
+def race_data_exists(event: str, year: int, session_type: str) -> bool:
+    """Check if race data file already exists."""
+    filepath = get_race_file_path(event, year, session_type)
+    return os.path.exists(filepath)
+
+def create_race_data_file(year: int, event: str, session_type: str = "Race", description: str = None) -> str:
+    """Extract and save comprehensive F1 race data to a text file.
+
+    Args:
+        year (int): The year of the race (must be between 2015 and current year)
+        event (str): The name of the race/circuit (e.g., 'bahrain', 'monza')
+        session_type (str, optional): Type of session ('Race', 'Qualifying', etc.). Defaults to "Race".
+        description (str, optional): AI-generated race description to include. Defaults to None.
+
+    Returns:
+        str: Path to the created data file.
+
+    Raises:
+        ValueError: If year is not between 2015 and current year.
+        
+    The function creates a detailed text file containing:
+    - Race overview and AI-generated description
+    - Event summary (date, track, country)
+    - Session overview with fastest laps
+    - Race classification or qualifying results
+    - Track conditions and weather data
+    - Session statistics
+    - Detailed lap-by-lap analysis for each driver
+    - LLM-friendly session overview
+    """
     
+    if not validate_year(year):
+        raise ValueError(f"Invalid year {year}. Year must be between 2015 and {datetime.now().year}")  
+        
     script_logger.info(f"🏎️ Starting data extraction for {event} {year} - {session_type}")
     
-    fastf1.Cache.enable_cache('cache')
+    fastf1.Cache.enable_cache('.fastf1_cache')
     session = fastf1.get_session(year, event, session_type)
     session.load()
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"race_data_{event}_{year}_{session_type}.txt"
+
+    filename = get_race_file_path(event, year, session_type)
     
     with open(filename, 'w', encoding='utf-8') as f:
+        script_logger.info(f"Created file")
         # Add race description if provided
         if description:
+            f.write("RACE OVERVIEW\n")
+            f.write("=============\n")
             f.write(f"{description}\n\n")
-            f.write("="*50 + "\n\n")
+            f.write("=============" + "\n\n")
         
         # Event Summary with clear structure
         f.write("EVENT SUMMARY\n")
@@ -308,24 +354,43 @@ def extract_race_data(year: int, event: str, session_type: str = "Race", descrip
 async def get_race_data(year: int, race_name: str):
     """
     Get detailed race data for a specific F1 race.
-    - year: The year of the race (e.g., 2024)
+    - year: The year of the race (2015 or later)
     - race_name: The name of the race/circuit (e.g., 'bahrain', 'jeddah', etc.)
     """
     try:
-        # Get AI-generated race description
+        # Validate and normalize inputs
+        is_valid, error_message, validated_data = validate_inputs(year, race_name)
+        if not is_valid:
+            raise ValueError(error_message)
+            
+        # Use normalized values from validation
+        year = validated_data["year"]
+        race_name = validated_data["race_name"]
+            
+        script_logger.info(f"Processing request for {race_name} {year}")
+
+        if race_data_exists(race_name, year, "Race"):
+            filename = get_race_file_path(race_name, year, "Race")
+            script_logger.info(f"Returning cached race data file: {filename}")
+            return FileResponse(
+                filename,
+                media_type="text/plain",
+                filename=os.path.basename(filename)
+            )
+
         description = await get_race_description(race_name, year)
+        filename = create_race_data_file(year, race_name, "Race", description)
         
-        # Extract race data with the description
-        filename = extract_race_data(year, race_name, "Race", description)
-        
-        # Return the file
         return FileResponse(
             filename,
             media_type="text/plain",
-            filename=filename
+            filename=os.path.basename(filename)
         )
+    except ValueError as ve:
+        script_logger.error(f"Validation error: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        script_logger.error(f"Error processing request: {e}")
+        script_logger.error(f"Error processing request: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

@@ -4,3 +4,4 @@ matplotlib
 google-genai
 fastapi
 uvicorn[standard]
+requests
